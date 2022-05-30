@@ -710,8 +710,7 @@ static int ieee80211_set_monitor_channel(struct wiphy *wiphy,
 			ret = ieee80211_vif_use_channel(sdata, chandef,
 					IEEE80211_CHANCTX_EXCLUSIVE);
 		}
-       // Patch: Always allow channel change, even if a normal virtual interface is present
-       } else /*if (local->open_count == local->monitors)*/ {
+	} else if (local->open_count == local->monitors) {
 		local->_oper_chandef = *chandef;
 		ieee80211_hw_config(local, 0);
 	}
@@ -1419,16 +1418,17 @@ static int ieee80211_add_station(struct wiphy *wiphy, struct net_device *dev,
 	if (is_multicast_ether_addr(mac))
 		return -EINVAL;
 
+	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_TDLS_PEER) &&
+	    sdata->vif.type == NL80211_IFTYPE_STATION &&
+	    !sdata->u.mgd.associated)
+		return -EINVAL;
+
 	sta = sta_info_alloc(sdata, mac, GFP_KERNEL);
 	if (!sta)
 		return -ENOMEM;
 
 	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_TDLS_PEER))
 		sta->sta.tdls = true;
-
-	if (sta->sta.tdls && sdata->vif.type == NL80211_IFTYPE_STATION &&
-	    !sdata->u.mgd.associated)
-		return -EINVAL;
 
 	err = sta_apply_parameters(local, sta, params);
 	if (err) {

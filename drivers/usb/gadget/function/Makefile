@@ -68,5 +68,3 @@ usb_f_qcrndis-y			:= f_qc_rndis.o
 obj-$(CONFIG_USB_F_QCRNDIS)	+= usb_f_qcrndis.o
 usb_f_rmnet_bam-y		:= f_rmnet.o u_ctrl_qti.o u_bam_dmux.o u_data_ipa.o
 obj-$(CONFIG_USB_F_RMNET_BAM)	+= usb_f_rmnet_bam.o
-usb_f_hid-y                     := f_hid.o
-obj-$(CONFIG_USB_G_ANDROID)     += usb_f_hid.o

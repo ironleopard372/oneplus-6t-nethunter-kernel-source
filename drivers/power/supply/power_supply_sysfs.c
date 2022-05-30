@@ -101,7 +101,8 @@ static ssize_t power_supply_show_property(struct device *dev,
 				dev_dbg(dev, "driver has no data for `%s' property\n",
 					attr->attr.name);
 			else if (ret != -ENODEV && ret != -EAGAIN)
-				dev_err(dev, "driver failed to report `%s' property: %zd\n",
+				dev_err_ratelimited(dev,
+					"driver failed to report `%s' property: %zd\n",
 					attr->attr.name, ret);
 			return ret;
 		}
@@ -200,6 +201,7 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(fg_current_now),
 	POWER_SUPPLY_ATTR(fg_voltage_now),
 	POWER_SUPPLY_ATTR(is_aging_test),
+	POWER_SUPPLY_ATTR(battery_health),
 	POWER_SUPPLY_ATTR(connect_disable),
 	POWER_SUPPLY_ATTR(connecter_temp),
 	POWER_SUPPLY_ATTR(bq_soc),

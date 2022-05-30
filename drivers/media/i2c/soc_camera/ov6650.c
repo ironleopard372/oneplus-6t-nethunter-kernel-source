@@ -853,8 +853,6 @@ static int ov6650_video_probe(struct i2c_client *client)
 
 	msleep(20);
 
-	msleep(20);
-
 	/*
 	 * check and show product ID and manufacturer ID
 	 */

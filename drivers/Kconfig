@@ -1,5 +1,4 @@
 menu "Device Drivers"
-source "drivers/rtl8812au/Kconfig"
 
 source "drivers/amba/Kconfig"
 

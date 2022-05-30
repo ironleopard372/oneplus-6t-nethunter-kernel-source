@@ -2505,7 +2505,7 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 	unsigned long flags;
 	int cpu;
 
-	init_new_task_load(p);
+	init_new_task_load(p, false);
 	cpu = get_cpu();
 
 	__sched_fork(clone_flags, p);
@@ -5528,16 +5528,20 @@ void init_idle_bootup_task(struct task_struct *idle)
  * init_idle - set up an idle thread for a given CPU
  * @idle: task in question
  * @cpu: cpu the idle task belongs to
+ * @cpu_up: differentiate between initial boot vs hotplug
  *
  * NOTE: this function does not set the idle thread's NEED_RESCHED
  * flag, to make booting more robust.
  */
-void init_idle(struct task_struct *idle, int cpu)
+void init_idle(struct task_struct *idle, int cpu, bool cpu_up)
 {
 	struct rq *rq = cpu_rq(cpu);
 	unsigned long flags;
 
 	__sched_fork(0, idle);
+
+	if (!cpu_up)
+		init_new_task_load(idle, true);
 
 	raw_spin_lock_irqsave(&idle->pi_lock, flags);
 	raw_spin_lock(&rq->lock);
@@ -8382,8 +8386,7 @@ void __init sched_init(void)
 	 * but because we are the idle thread, we just pick up running again
 	 * when this runqueue becomes "idle".
 	 */
-	init_idle(current, smp_processor_id());
-	init_new_task_load(current);
+	init_idle(current, smp_processor_id(), false);
 
 	calc_load_update = jiffies + LOAD_FREQ;
 
@@ -9182,10 +9185,6 @@ static int cpu_cgroup_can_attach(struct cgroup_taskset *tset)
 	cgroup_taskset_for_each(task, css, tset) {
 #ifdef CONFIG_RT_GROUP_SCHED
 		if (!sched_rt_can_attach(css_tg(css), task))
-			return -EINVAL;
-#else
-		/* We don't support RT-tasks being in separate groups */
-		if (task->sched_class != &fair_sched_class)
 			return -EINVAL;
 #endif
 		/*

@@ -1,25 +1,3 @@
-DJY Nethunter core for OnePlus 6 / 6T
-This is the long-term support kernel source code for DJY nethunter. This code is combined with android-linux-stable-op6 to ensure the latest state.
-Https://github.com/android-linux-stable/op6
-
-Compile with aarch64-gcc10
-
-Https://github.com/baalajimaestro/aarch64-maestro-linux-android
-
-Kernel code has patched WIFI and HID modules and set selinux to permanent license state
-
-And compile the official Linux wireless firmware into the kernel to ensure the injection of airmon-ng
-
-Https://cdn.kernel.org/
-
-Source code from:
-
-Https://github.com/kristofpetho/op6
-===========================================
-
-
-
-
         Linux kernel release 4.x <http://kernel.org/>
 
 These are the release notes for Linux version 4.  Read them carefully,

@@ -11,10 +11,6 @@
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
  * more details.
  *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
- *
  * The full GNU General Public License is included in this distribution in the
  * file called LICENSE.
  *
@@ -44,6 +40,7 @@
 
 #define RT_TXDESC_NUM				128
 #define TX_DESC_NUM_92E				512
+#define TX_DESC_NUM_8822B			512
 #define RT_TXDESC_NUM_BE_QUEUE			256
 
 #define BK_QUEUE				0
@@ -55,6 +52,7 @@
 #define MGNT_QUEUE				6
 #define HIGH_QUEUE				7
 #define HCCA_QUEUE				8
+#define H2C_QUEUE				TXCMD_QUEUE	/* In 8822B */
 
 #define RTL_PCI_DEVICE(vend, dev, cfg)  \
 	.vendor = (vend), \
@@ -112,6 +110,7 @@
 #define RTL_PCI_8192EE_DID	0x818B	/*8192ee*/
 #define RTL_PCI_8821AE_DID	0x8821	/*8821ae*/
 #define RTL_PCI_8812AE_DID	0x8812	/*8812ae*/
+#define RTL_PCI_8822BE_DID	0xB822	/*8822be*/
 
 /*8192 support 16 pages of IO registers*/
 #define RTL_MEM_MAPPED_IO_RANGE_8190PCI		0x1000
@@ -161,7 +160,7 @@ struct rtl_tx_desc {
 } __packed;
 
 struct rtl_rx_buffer_desc { /*rx buffer desc*/
-	u32 dword[2];
+	u32 dword[(DMA_IS_64BIT + 1)*2];
 } __packed;
 
 struct rtl_rx_desc { /*old: rx desc new: rx wifi info*/
@@ -219,7 +218,7 @@ struct rtl_pci {
 
 	/*irq */
 	u8 irq_alloc;
-	u32 irq_mask[2];
+	u32 irq_mask[4];	/* 0-1: normal, 2: unused, 3: h2c */
 	u32 sys_irq_mask;
 
 	/*Bcn control register setting */

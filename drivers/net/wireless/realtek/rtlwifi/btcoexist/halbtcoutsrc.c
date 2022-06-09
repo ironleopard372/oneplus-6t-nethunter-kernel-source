@@ -32,6 +32,7 @@
 struct btc_coexist gl_bt_coexist;
 
 u32 btc_dbg_type[BTC_MSG_MAX];
+struct wifi_only_cfg gl_bt_coexist_wifi_only;
 
 /***************************************************
  *		Debug related function
@@ -141,9 +142,46 @@ static u8 halbtc_get_wifi_central_chnl(struct btc_coexist *btcoexist)
 
 	if (rtlphy->current_channel != 0)
 		chnl = rtlphy->current_channel;
-	btc_alg_dbg(ALGO_TRACE,
-		    "static halbtc_get_wifi_central_chnl:%d\n", chnl);
+	RT_TRACE(rtlpriv, COMP_BT_COEXIST, DBG_LOUD,
+		 "static halbtc_get_wifi_central_chnl:%d\n", chnl);
 	return chnl;
+}
+
+u8 rtl_get_hwpg_single_ant_path(struct rtl_priv *rtlpriv)
+{
+	return rtlpriv->btcoexist.btc_info.single_ant_path;
+}
+
+u8 rtl_get_hwpg_bt_type(struct rtl_priv *rtlpriv)
+{
+	return rtlpriv->btcoexist.btc_info.bt_type;
+}
+
+u8 rtl_get_hwpg_ant_num(struct rtl_priv *rtlpriv)
+{
+	u8 num;
+
+	if (rtlpriv->btcoexist.btc_info.ant_num == ANT_X2)
+		num = 2;
+	else
+		num = 1;
+
+	return num;
+}
+
+u8 rtl_get_hwpg_package_type(struct rtl_priv *rtlpriv)
+{
+	struct rtl_hal *rtlhal = rtl_hal(rtlpriv);
+
+	return rtlhal->package_type;
+}
+
+static
+u8 rtl_get_hwpg_rfe_type(struct rtl_priv *rtlpriv)
+{
+	struct rtl_hal *rtlhal = rtl_hal(rtlpriv);
+
+	return rtlhal->rfe_type;
 }
 
 static void halbtc_leave_lps(struct btc_coexist *btcoexist)
@@ -335,6 +373,9 @@ static bool halbtc_get(void *void_btcoexist, u8 get_type, void *out_buf)
 	case BTC_GET_U4_BT_PATCH_VER:
 		*u32_tmp = halbtc_get_bt_patch_version(btcoexist);
 		break;
+	case BTC_GET_U4_VENDOR:
+		*u32_tmp = BTC_VENDOR_OTHER;
+		break;
 	case BTC_GET_U1_WIFI_DOT11_CHNL:
 		*u8_tmp = rtlphy->current_channel;
 		break;
@@ -434,7 +475,7 @@ static bool halbtc_set(void *void_btcoexist, u8 set_type, void *in_buf)
 	case BTC_SET_ACT_DISABLE_LOW_POWER:
 		halbtc_disable_low_power();
 		break;
-	case BTC_SET_ACT_UPDATE_ra_mask:
+	case BTC_SET_ACT_UPDATE_RAMASK:
 		btcoexist->bt_info.ra_mask = *u32_tmp;
 		break;
 	case BTC_SET_ACT_SEND_MIMO_PS:
@@ -655,6 +696,33 @@ bool exhalbtc_initlize_variables(struct rtl_priv *adapter)
 	btcoexist->bt_info.agg_buf_size = 5;
 
 	btcoexist->bt_info.increase_scan_dev_num = false;
+
+	btcoexist->board_info.rfe_type = rtl_get_hwpg_rfe_type(adapter);
+	btcoexist->board_info.ant_div_cfg = 0;
+
+	return true;
+}
+
+bool exhalbtc_initlize_variables_wifi_only(void *adapter)
+{
+	struct wifi_only_cfg *wifionly_cfg = &gl_bt_coexist_wifi_only;
+	struct wifi_only_haldata *wifionly_haldata =
+					&wifionly_cfg->haldata_info;
+	struct rtl_priv *rtlpriv = adapter;
+
+	memset(&gl_bt_coexist_wifi_only, 0, sizeof(gl_bt_coexist_wifi_only));
+
+	wifionly_cfg->adapter = adapter;
+
+	wifionly_cfg->chip_interface = WIFIONLY_INTF_PCI;
+
+	wifionly_haldata->customer_id = CUSTOMER_NORMAL;
+	wifionly_haldata->efuse_pg_antnum = rtl_get_hwpg_ant_num(rtlpriv);
+	wifionly_haldata->efuse_pg_antpath =
+					rtl_get_hwpg_single_ant_path(rtlpriv);
+	wifionly_haldata->rfe_type = rtl_get_hwpg_rfe_type(rtlpriv);
+	wifionly_haldata->ant_div_cfg = 0;
+
 	return true;
 }
 
@@ -670,6 +738,12 @@ void exhalbtc_init_hw_config(struct btc_coexist *btcoexist)
 
 	if (rtlhal->hw_type == HARDWARE_TYPE_RTL8723BE)
 		ex_btc8723b2ant_init_hwconfig(btcoexist);
+}
+
+void exhalbtc_init_hw_config_wifi_only(struct wifi_only_cfg *wifionly_cfg)
+{
+	if (IS_HARDWARE_TYPE_8822B(wifionly_cfg->adapter))
+		ex_hal8822b_wifi_only_hw_config(wifionly_cfg);
 }
 
 void exhalbtc_init_coex_dm(struct btc_coexist *btcoexist)
@@ -757,6 +831,13 @@ void exhalbtc_scan_notify(struct btc_coexist *btcoexist, u8 type)
 		ex_btc8723b2ant_scan_notify(btcoexist, scan_type);
 
 	halbtc_nomal_low_power();
+}
+
+void exhalbtc_scan_notify_wifi_only(struct wifi_only_cfg *wifionly_cfg,
+				    u8 is_5g)
+{
+	if (IS_HARDWARE_TYPE_8822B(wifionly_cfg->adapter))
+		ex_hal8822b_wifi_only_scannotify(wifionly_cfg, is_5g);
 }
 
 void exhalbtc_connect_notify(struct btc_coexist *btcoexist, u8 action)
@@ -1009,4 +1090,24 @@ void exhalbtc_display_bt_coex_info(struct btc_coexist *btcoexist)
 
 	if (rtlhal->hw_type == HARDWARE_TYPE_RTL8723BE)
 		ex_btc8723b2ant_display_coex_info(btcoexist);
+}
+
+void exhalbtc_switch_band_notify(struct btc_coexist *btcoexist, u8 type)
+{
+	if (!halbtc_is_bt_coexist_available(btcoexist))
+		return;
+
+	if (btcoexist->manual_control)
+		return;
+
+	halbtc_leave_low_power();
+
+	halbtc_nomal_low_power();
+}
+
+void exhalbtc_switch_band_notify_wifi_only(struct wifi_only_cfg *wifionly_cfg,
+					   u8 is_5g)
+{
+	if (IS_HARDWARE_TYPE_8822B(wifionly_cfg->adapter))
+		ex_hal8822b_wifi_only_switchbandnotify(wifionly_cfg, is_5g);
 }

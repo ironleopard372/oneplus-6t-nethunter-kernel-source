@@ -117,8 +117,7 @@ static void rtl_fw_do_work(const struct firmware *firmware, void *context,
 	}
 found_alt:
 	if (firmware->size > rtlpriv->max_fw_size) {
-		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
-			 "Firmware is too big!\n");
+		pr_err("Firmware is too big!\n");
 		release_firmware(firmware);
 		return;
 	}
@@ -131,6 +130,7 @@ found_alt:
 		       firmware->size);
 		rtlpriv->rtlhal.wowlan_fwsize = firmware->size;
 	}
+	rtlpriv->rtlhal.fwsize = firmware->size;
 	release_firmware(firmware);
 }
 
@@ -233,6 +233,7 @@ static int rtl_op_add_interface(struct ieee80211_hw *hw,
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	struct rtl_mac *mac = rtl_mac(rtl_priv(hw));
 	int err = 0;
+	u8 retry_limit = 0x30;
 
 	if (mac->vif) {
 		RT_TRACE(rtlpriv, COMP_ERR, DBG_WARNING,
@@ -271,6 +272,7 @@ static int rtl_op_add_interface(struct ieee80211_hw *hw,
 		rtlpriv->cfg->ops->set_hw_reg(hw, HW_VAR_BASIC_RATE,
 				(u8 *)(&mac->basic_rates));
 
+		retry_limit = 0x07;
 		break;
 	case NL80211_IFTYPE_P2P_GO:
 		mac->p2p = P2P_ROLE_GO;
@@ -287,6 +289,8 @@ static int rtl_op_add_interface(struct ieee80211_hw *hw,
 			mac->basic_rates = 0xff0;
 		rtlpriv->cfg->ops->set_hw_reg(hw, HW_VAR_BASIC_RATE,
 					      (u8 *)(&mac->basic_rates));
+
+		retry_limit = 0x07;
 		break;
 	case NL80211_IFTYPE_MESH_POINT:
 		RT_TRACE(rtlpriv, COMP_MAC80211, DBG_LOUD,
@@ -300,10 +304,12 @@ static int rtl_op_add_interface(struct ieee80211_hw *hw,
 			mac->basic_rates = 0xff0;
 		rtlpriv->cfg->ops->set_hw_reg(hw, HW_VAR_BASIC_RATE,
 				(u8 *)(&mac->basic_rates));
+
+		retry_limit = 0x07;
 		break;
 	default:
-		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
-			 "operation mode %d is not support!\n", vif->type);
+		pr_err("operation mode %d is not supported!\n",
+		       vif->type);
 		err = -EOPNOTSUPP;
 		goto out;
 	}
@@ -321,6 +327,10 @@ static int rtl_op_add_interface(struct ieee80211_hw *hw,
 	memcpy(mac->mac_addr, vif->addr, ETH_ALEN);
 	rtlpriv->cfg->ops->set_hw_reg(hw, HW_VAR_ETHER_ADDR, mac->mac_addr);
 
+	mac->retry_long = retry_limit;
+	mac->retry_short = retry_limit;
+	rtlpriv->cfg->ops->set_hw_reg(hw, HW_VAR_RETRY_LIMIT,
+			(u8 *)(&retry_limit));
 out:
 	mutex_unlock(&rtlpriv->locks.conf_mutex);
 	return err;
@@ -619,7 +629,8 @@ static int rtl_op_config(struct ieee80211_hw *hw, u32 changed)
 	}
 
 	/*For LPS */
-	if (changed & IEEE80211_CONF_CHANGE_PS) {
+	if ((changed & IEEE80211_CONF_CHANGE_PS) &&
+	    rtlpriv->psc.swctrl_lps && !rtlpriv->psc.fwctrl_lps) {
 		cancel_delayed_work(&rtlpriv->works.ps_work);
 		cancel_delayed_work(&rtlpriv->works.ps_rfon_wq);
 		if (conf->flags & IEEE80211_CONF_PS) {
@@ -645,10 +656,15 @@ static int rtl_op_config(struct ieee80211_hw *hw, u32 changed)
 		RT_TRACE(rtlpriv, COMP_MAC80211, DBG_LOUD,
 			 "IEEE80211_CONF_CHANGE_RETRY_LIMITS %x\n",
 			 hw->conf.long_frame_max_tx_count);
-		mac->retry_long = hw->conf.long_frame_max_tx_count;
-		mac->retry_short = hw->conf.long_frame_max_tx_count;
-		rtlpriv->cfg->ops->set_hw_reg(hw, HW_VAR_RETRY_LIMIT,
+		/* brought up everything changes (changed == ~0) indicates first
+		 * open, so use our default value instead of that of wiphy.
+		 */
+		if (changed != ~0) {
+			mac->retry_long = hw->conf.long_frame_max_tx_count;
+			mac->retry_short = hw->conf.long_frame_max_tx_count;
+			rtlpriv->cfg->ops->set_hw_reg(hw, HW_VAR_RETRY_LIMIT,
 				(u8 *)(&hw->conf.long_frame_max_tx_count));
+		}
 	}
 
 	if (changed & IEEE80211_CONF_CHANGE_CHANNEL &&
@@ -763,9 +779,8 @@ static int rtl_op_config(struct ieee80211_hw *hw, u32 changed)
 			default:
 					mac->bw_40 = false;
 					mac->bw_80 = false;
-					RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
-						 "switch case %#x not processed\n",
-						 channel_type);
+					pr_err("switch case %#x not processed\n",
+					       channel_type);
 					break;
 			}
 		}
@@ -931,6 +946,9 @@ static int rtl_op_sta_add(struct ieee80211_hw *hw,
 		RT_TRACE(rtlpriv, COMP_MAC80211, DBG_DMESG,
 			"Add sta addr is %pM\n", sta->addr);
 		rtlpriv->cfg->ops->update_rate_tbl(hw, sta, 0);
+
+		if (rtlpriv->phydm.ops)
+			rtlpriv->phydm.ops->phydm_add_sta(rtlpriv, sta);
 	}
 
 	return 0;
@@ -945,6 +963,10 @@ static int rtl_op_sta_remove(struct ieee80211_hw *hw,
 	if (sta) {
 		RT_TRACE(rtlpriv, COMP_MAC80211, DBG_DMESG,
 			 "Remove sta addr is %pM\n", sta->addr);
+
+		if (rtlpriv->phydm.ops)
+			rtlpriv->phydm.ops->phydm_del_sta(rtlpriv, sta);
+
 		sta_entry = (struct rtl_sta_info *)sta->drv_priv;
 		sta_entry->wireless_mode = 0;
 		sta_entry->ratr_index = 0;
@@ -1147,6 +1169,9 @@ static void rtl_op_bss_info_changed(struct ieee80211_hw *hw,
 			RT_TRACE(rtlpriv, COMP_MAC80211, DBG_DMESG,
 				 "BSS_CHANGED_ASSOC\n");
 		} else {
+
+			struct cfg80211_bss *bss = NULL;
+
 			mstatus = RT_MEDIA_DISCONNECT;
 
 			if (mac->link_state == MAC80211_LINKED)
@@ -1154,6 +1179,26 @@ static void rtl_op_bss_info_changed(struct ieee80211_hw *hw,
 			if (ppsc->p2p_ps_info.p2p_ps_mode > P2P_PS_NONE)
 				rtl_p2p_ps_cmd(hw, P2P_PS_DISABLE);
 			mac->link_state = MAC80211_NOLINK;
+
+			bss = cfg80211_get_bss(hw->wiphy, NULL,
+				(u8 *)mac->bssid, NULL, 0,
+				IEEE80211_BSS_TYPE_ESS,
+				IEEE80211_PRIVACY_OFF);
+
+
+			RT_TRACE(rtlpriv, COMP_MAC80211, DBG_DMESG,
+				"bssid = %x-%x-%x-%x-%x-%x\n",
+				mac->bssid[0], mac->bssid[1],
+				mac->bssid[2], mac->bssid[3],
+				mac->bssid[4], mac->bssid[5]);
+
+			if (bss) {
+				cfg80211_unlink_bss(hw->wiphy, bss);
+				cfg80211_put_bss(hw->wiphy, bss);
+				RT_TRACE(rtlpriv, COMP_MAC80211, DBG_DMESG,
+					"cfg80211_unlink !!\n");
+			}
+
 			eth_zero_addr(mac->bssid);
 			mac->vendor = PEER_UNKNOWN;
 			mac->mode = 0;
@@ -1398,8 +1443,7 @@ static int rtl_op_ampdu_action(struct ieee80211_hw *hw,
 			 "IEEE80211_AMPDU_RX_STOP:TID:%d\n", tid);
 		return rtl_rx_agg_stop(hw, sta, tid);
 	default:
-		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
-			 "IEEE80211_AMPDU_ERR!!!!:\n");
+		pr_err("IEEE80211_AMPDU_ERR!!!!:\n");
 		return -EOPNOTSUPP;
 	}
 	return 0;
@@ -1419,8 +1463,14 @@ static void rtl_op_sw_scan_start(struct ieee80211_hw *hw,
 		return;
 	}
 
+	if (rtlpriv->phydm.ops)
+		rtlpriv->phydm.ops->phydm_pause_dig(rtlpriv, 1);
+
 	if (rtlpriv->cfg->ops->get_btc_status())
 		rtlpriv->btcoexist.btc_ops->btc_scan_notify(rtlpriv, 1);
+	else
+		rtlpriv->btcoexist.btc_ops->btc_scan_notify_wifi_only(rtlpriv,
+								      1);
 
 	if (rtlpriv->dm.supp_phymode_switch) {
 		if (rtlpriv->cfg->ops->chk_switch_dmdp)
@@ -1473,6 +1523,12 @@ static void rtl_op_sw_scan_complete(struct ieee80211_hw *hw,
 	rtlpriv->cfg->ops->scan_operation_backup(hw, SCAN_OPT_RESTORE);
 	if (rtlpriv->cfg->ops->get_btc_status())
 		rtlpriv->btcoexist.btc_ops->btc_scan_notify(rtlpriv, 0);
+	else
+		rtlpriv->btcoexist.btc_ops->btc_scan_notify_wifi_only(rtlpriv,
+								      0);
+
+	if (rtlpriv->phydm.ops)
+		rtlpriv->phydm.ops->phydm_pause_dig(rtlpriv, 0);
 }
 
 static int rtl_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
@@ -1531,12 +1587,11 @@ static int rtl_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		key_type = AESCMAC_ENCRYPTION;
 		RT_TRACE(rtlpriv, COMP_SEC, DBG_DMESG, "alg:CMAC\n");
 		RT_TRACE(rtlpriv, COMP_SEC, DBG_DMESG,
-			 "HW don't support CMAC encrypiton, use software CMAC encrypiton\n");
+			 "HW don't support CMAC encryption, use software CMAC encryption\n");
 		err = -EOPNOTSUPP;
 		goto out_unlock;
 	default:
-		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
-			 "alg_err:%x!!!!:\n", key->cipher);
+		pr_err("alg_err:%x!!!!:\n", key->cipher);
 		goto out_unlock;
 	}
 	if (key_type == WEP40_ENCRYPTION ||
@@ -1612,8 +1667,8 @@ static int rtl_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 			RT_TRACE(rtlpriv, COMP_SEC, DBG_DMESG,
 				 "set pairwise key\n");
 			if (!sta) {
-				RT_ASSERT(false,
-					  "pairwise key without mac_addr\n");
+				WARN_ONCE(true,
+					  "rtlwifi: pairwise key without mac_addr\n");
 
 				err = -EOPNOTSUPP;
 				goto out_unlock;
@@ -1658,11 +1713,12 @@ static int rtl_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		 *so don't use rtl_cam_reset_all_entry
 		 *or clear all entry here.
 		 */
+		rtl_wait_tx_report_acked(hw, 500); /* wait 500ms for TX ack */
+
 		rtl_cam_delete_one_entry(hw, mac_addr, key_idx);
 		break;
 	default:
-		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
-			 "cmd_err:%x!!!!:\n", cmd);
+		pr_err("cmd_err:%x!!!!:\n", cmd);
 	}
 out_unlock:
 	mutex_unlock(&rtlpriv->locks.conf_mutex);
@@ -1803,8 +1859,8 @@ bool rtl_hal_pwrseqcmdparsing(struct rtl_priv *rtlpriv, u8 cut_version,
 					 "rtl_hal_pwrseqcmdparsing(): PWR_CMD_END\n");
 				return true;
 			default:
-				RT_ASSERT(false,
-					  "rtl_hal_pwrseqcmdparsing(): Unknown CMD!!\n");
+				WARN_ONCE(true,
+					  "rtlwifi: rtl_hal_pwrseqcmdparsing(): Unknown CMD!!\n");
 				break;
 			}
 		}
@@ -1828,7 +1884,8 @@ bool rtl_cmd_send_packet(struct ieee80211_hw *hw, struct sk_buff *skb)
 
 	spin_lock_irqsave(&rtlpriv->locks.irq_th_lock, flags);
 	pskb = __skb_dequeue(&ring->queue);
-	kfree_skb(pskb);
+	if (pskb)
+		dev_kfree_skb_irq(pskb);
 
 	/*this is wrong, fill_tx_cmddesc needs update*/
 	pdesc = &ring->desc[0];

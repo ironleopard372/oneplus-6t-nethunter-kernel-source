@@ -731,6 +731,14 @@ void rtl92ee_tx_fill_desc(struct ieee80211_hw *hw,
 			SET_TX_DESC_OFFSET(pdesc, USB_HWDESC_HEADER_LEN);
 		}
 
+		/* tx report */
+		if (ptcb_desc->use_spe_rpt) {
+			u16 sn = rtl_get_tx_report_sn(hw);
+
+			SET_TX_DESC_SPE_RPT(pdesc, 1);
+			SET_TX_DESC_SW_DEFINE(pdesc, sn);
+		}
+
 		SET_TX_DESC_TX_RATE(pdesc, ptcb_desc->hw_rate);
 
 		if (ieee80211_is_mgmt(fc)) {
@@ -985,14 +993,20 @@ void rtl92ee_set_desc(struct ieee80211_hw *hw, u8 *pdesc, bool istx,
 						       MAX_RECEIVE_BUFFER_SIZE +
 						       RX_DESC_SIZE);
 
-			SET_RX_BUFFER_PHYSICAL_LOW(pdesc, *(u32 *)val);
+			SET_RX_BUFFER_PHYSICAL_LOW(pdesc, (*(dma_addr_t *)val) &
+						DMA_BIT_MASK(32));
+#if (DMA_IS_64BIT == 1)
+			SET_RX_BUFFER_PHYSICAL_HIGH(pdesc,
+					((u64)(*(dma_addr_t *)val) >> 32));
+#endif
 			break;
 		case HW_DESC_RXERO:
 			SET_RX_DESC_EOR(pdesc, 1);
 			break;
 		default:
-			RT_ASSERT(false,
-				  "ERR rxdesc :%d not process\n", desc_name);
+			WARN_ONCE(true,
+				  "rtl8192ee: ERR rxdesc :%d not processed\n",
+				  desc_name);
 			break;
 		}
 	}
@@ -1010,9 +1024,15 @@ u32 rtl92ee_get_desc(u8 *pdesc, bool istx, u8 desc_name)
 		case HW_DESC_TXBUFF_ADDR:
 			ret = GET_TXBUFFER_DESC_ADDR_LOW(pdesc, 1);
 			break;
+#if (DMA_IS_64BIT == 1)
+		case HW_DESC_TXBUFF_ADDR_HI:
+			ret = GET_TXBUFFER_DESC_ADDR_HIGH(pdesc, 1);
+			break;
+#endif
 		default:
-			RT_ASSERT(false,
-				  "ERR txdesc :%d not process\n", desc_name);
+			WARN_ONCE(true,
+				  "rtl8192ee: ERR txdesc :%d not processed\n",
+				  desc_name);
 			break;
 		}
 	} else {
@@ -1027,8 +1047,9 @@ u32 rtl92ee_get_desc(u8 *pdesc, bool istx, u8 desc_name)
 			ret = GET_RX_DESC_BUFF_ADDR(pdesc);
 			break;
 		default:
-			RT_ASSERT(false,
-				  "ERR rxdesc :%d not process\n", desc_name);
+			WARN_ONCE(true,
+				  "rtl8192ee: ERR rxdesc :%d not processed\n",
+				  desc_name);
 			break;
 		}
 	}

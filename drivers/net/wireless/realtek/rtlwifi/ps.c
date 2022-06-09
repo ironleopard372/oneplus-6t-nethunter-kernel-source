@@ -34,6 +34,7 @@ bool rtl_ps_enable_nic(struct ieee80211_hw *hw)
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	struct rtl_ps_ctl *ppsc = rtl_psc(rtl_priv(hw));
 	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
+	struct rtl_mac *rtlmac = rtl_mac(rtl_priv(hw));
 
 	/*<1> reset trx ring */
 	if (rtlhal->interface == INTF_PCI)
@@ -46,7 +47,15 @@ bool rtl_ps_enable_nic(struct ieee80211_hw *hw)
 	/*<2> Enable Adapter */
 	if (rtlpriv->cfg->ops->hw_init(hw))
 		return false;
+	rtlpriv->cfg->ops->set_hw_reg(hw, HW_VAR_RETRY_LIMIT,
+			&rtlmac->retry_long);
 	RT_CLEAR_PS_LEVEL(ppsc, RT_RF_OFF_LEVL_HALT_NIC);
+
+	/*<2.1> Switch Channel & Bandwidth to last rtl_op_config setting*/
+	rtlpriv->cfg->ops->switch_channel(hw);
+	rtlpriv->cfg->ops->set_channel_access(hw);
+	rtlpriv->cfg->ops->set_bw_mode(hw,
+			cfg80211_get_chandef_type(&hw->conf.chandef));
 
 	/*<3> Enable Interrupt */
 	rtlpriv->cfg->ops->enable_interrupt(hw);
@@ -150,8 +159,7 @@ static bool rtl_ps_set_rf_state(struct ieee80211_hw *hw,
 		break;
 
 	default:
-		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
-			 "switch case %#x not processed\n", state_toset);
+		pr_err("switch case %#x not processed\n", state_toset);
 		break;
 	}
 
@@ -299,6 +307,8 @@ void rtl_ips_nic_on(struct ieee80211_hw *hw)
 			ppsc->in_powersavemode = false;
 			_rtl_ps_inactive_ps(hw);
 			/* call after RF on */
+			if (rtlpriv->phydm.ops)
+				rtlpriv->phydm.ops->phydm_reset_dm(rtlpriv);
 			if (rtlpriv->cfg->ops->get_btc_status())
 				rtlpriv->btcoexist.btc_ops->btc_ips_notify(rtlpriv,
 									ppsc->inactive_pwrstate);

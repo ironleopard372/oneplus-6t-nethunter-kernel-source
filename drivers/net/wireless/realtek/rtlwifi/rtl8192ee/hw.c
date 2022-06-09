@@ -1320,7 +1320,7 @@ int rtl92ee_hw_init(struct ieee80211_hw *hw)
 		rtl_write_byte(rtlpriv, 0x65, 1);
 	}
 	if (!rtstatus) {
-		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG, "Init MAC failed\n");
+		pr_err("Init MAC failed\n");
 		err = 1;
 		return err;
 	}
@@ -1485,8 +1485,7 @@ static int _rtl92ee_set_media_status(struct ieee80211_hw *hw,
 			 "Set Network type to AP!\n");
 		break;
 	default:
-		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
-			 "Network type %d not support!\n", type);
+		pr_err("Network type %d not support!\n", type);
 		return 1;
 	}
 
@@ -1582,7 +1581,7 @@ void rtl92ee_set_qos(struct ieee80211_hw *hw, int aci)
 		rtl_write_dword(rtlpriv, REG_EDCA_VO_PARAM, 0x2f3222);
 		break;
 	default:
-		RT_ASSERT(false, "invalid aci: %d !\n", aci);
+		WARN_ONCE(true, "rtl8192ee: invalid aci: %d !\n", aci);
 		break;
 	}
 }
@@ -1676,7 +1675,8 @@ void rtl92ee_card_disable(struct ieee80211_hw *hw)
 }
 
 void rtl92ee_interrupt_recognized(struct ieee80211_hw *hw,
-				  u32 *p_inta, u32 *p_intb)
+				  u32 *p_inta, u32 *p_intb,
+				  u32 *p_intc, u32 *p_intd)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	struct rtl_pci *rtlpci = rtl_pcidev(rtl_pcipriv(hw));
@@ -2206,7 +2206,7 @@ void rtl92ee_read_eeprom_info(struct ieee80211_hw *hw)
 		rtlefuse->autoload_failflag = false;
 		_rtl92ee_read_adapter_info(hw);
 	} else {
-		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG, "Autoload ERR!!\n");
+		pr_err("Autoload ERR!!\n");
 	}
 	_rtl92ee_hal_customized_behavior(hw);
 
@@ -2484,9 +2484,7 @@ void rtl92ee_set_key(struct ieee80211_hw *hw, u32 key_index,
 					entry_id = rtl_cam_get_free_entry(hw,
 								     p_macaddr);
 					if (entry_id >=  TOTAL_CAM_ENTRY) {
-						RT_TRACE(rtlpriv, COMP_SEC,
-							 DBG_EMERG,
-							 "Can not find free hw security cam entry\n");
+						pr_err("Can not find free hw security cam entry\n");
 						return;
 					}
 				} else {

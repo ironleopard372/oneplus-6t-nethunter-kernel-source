@@ -135,18 +135,20 @@ struct coex_dm_8821a_1ant {
 	u8	cur_retry_limit_type;
 	u8	pre_ampdu_time_type;
 	u8	cur_ampdu_time_type;
+	u32	arp_cnt;
 
 	u8	error_condition;
 };
 
 struct coex_sta_8821a_1ant {
+	bool	bt_disabled;
 	bool	bt_link_exist;
 	bool	sco_exist;
 	bool	a2dp_exist;
 	bool	hid_exist;
 	bool	pan_exist;
 
-	bool	under_Lps;
+	bool	under_lps;
 	bool	under_ips;
 	u32	special_pkt_period_cnt;
 	u32	high_priority_tx;
@@ -154,12 +156,14 @@ struct coex_sta_8821a_1ant {
 	u32	low_priority_tx;
 	u32	low_priority_rx;
 	u8	bt_rssi;
+	bool	bt_tx_rx_mask;
 	u8	pre_bt_rssi_state;
 	u8	pre_wifi_rssi_state[4];
 	bool	c2h_bt_info_req_sent;
 	u8	bt_info_c2h[BT_INFO_SRC_8821A_1ANT_MAX][10];
 	u32	bt_info_c2h_cnt[BT_INFO_SRC_8821A_1ANT_MAX];
 	bool	c2h_bt_inquiry_page;
+	bool	wifi_is_high_pri_task;
 	u8	bt_retry_cnt;
 	u8	bt_info_ext;
 };
